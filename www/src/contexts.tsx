@@ -11,12 +11,12 @@ import './app.css';
 
 import type * as xktypes from 'src/types/xkpasswd';
 
-const DEFAULT_WORDS_COUNT = 3;
+const DEFAULT_WORDS_COUNT = 6;
 const DEFAULT_WORD_TRANSFORMS =
-  xkpasswd.WordTransform.Lowercase | xkpasswd.WordTransform.Uppercase;
-const DEFAULT_SEPARATORS = '.';
+  xkpasswd.WordTransform.Titlecase;
+const DEFAULT_SEPARATORS = '~@$%^&*-_+=:|?/.;';
 const DEFAULT_DIGITS_AFTER = 2;
-const DEFAULT_SYMBOLS_AFTER = 2;
+const DEFAULT_SYMBOLS_AFTER = 0;
 const DEFAULT_PADDING_SYMBOLS = '~@$%^&*-_+=:|?/.;';
 const DEFAULT_ADAPTIVE_COUNT = 32;
 
