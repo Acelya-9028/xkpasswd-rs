@@ -34,7 +34,7 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4.4.1
         with:
           token: ${{ secrets.GHPAGES_TOKEN }}
-          repository-name: xkpasswd/xkpasswd.github.io
+          repository-name: Acelya-9028/xkpasswd.github.io
           branch: gh-pages
           folder: www/dist
           clean: true
