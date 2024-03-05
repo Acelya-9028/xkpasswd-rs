@@ -1,9 +1,10 @@
 name: Production deployment
 
 on:
-  push:
-    branches:
-      - main
+  # push:
+  #   branches:
+  #     - main
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -34,7 +35,7 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4.4.1
         with:
           token: ${{ secrets.GHPAGES_TOKEN }}
-          repository-name: xkpasswd/xkpasswd.github.io
+          repository-name: Acelya-9028/Acelya-9028.github.io
           branch: gh-pages
           folder: www/dist
           clean: true

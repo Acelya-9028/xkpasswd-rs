@@ -30,7 +30,7 @@ const Languages = () => {
           <a
             className="language-option"
             key={`language_option_${code}`}
-            href={`/?lang=${code}`}
+            href={`./?lang=${code}`}
           >
             {title}
           </a>

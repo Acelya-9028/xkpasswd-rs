@@ -6,4 +6,5 @@ import tsconfigPaths from 'vite-tsconfig-paths';
 
 export default defineConfig({
   plugins: [preact(), wasm(), topLevelAwait(), tsconfigPaths()],
+  base: '/xkpasswd-rs/',
 });
