@@ -60,7 +60,7 @@ Usage: xkpasswd [OPTIONS]
 
 Options:
   -w, --words <WORDS_COUNT>
-          total number of words from dictionary
+          Total number of words from dictionary
 
   -l, --word-min <WORD_LENGTH_MIN>
           Minimum length of a word

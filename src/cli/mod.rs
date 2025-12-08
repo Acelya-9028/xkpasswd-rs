@@ -22,7 +22,7 @@ pub struct Cli {
     #[arg(
         short = 'w',
         long = "words",
-        help = "total number of words from dictionary"
+        help = "Total number of words from dictionary"
     )]
     words_count: Option<u8>,
 
