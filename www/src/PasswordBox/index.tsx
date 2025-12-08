@@ -38,6 +38,9 @@ const PasswordBox = ({ passwd }: Props) => {
           <div className="password-tooltips">{'Password copied'}</div>
         )}
       </div>
+      <div className="section password-length">
+        {`Length: ${passwd.length} characters`}
+      </div>
     </>
   );
 };
