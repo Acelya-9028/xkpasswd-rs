@@ -85,6 +85,15 @@ impl WasmSettings {
         WasmSettings { settings }
     }
 
+    #[wasm_bindgen(js_name = "withAdaptiveFitPadding")]
+    pub fn with_adaptive_fit_padding(&self, length: usize) -> WasmSettings {
+        let settings = self
+            .settings
+            .with_padding_strategy(PaddingStrategy::AdaptiveFit(length))
+            .expect(DEFAULT_SETTING_BUILDER_ERR);
+        WasmSettings { settings }
+    }
+
     #[wasm_bindgen(js_name = "withWordTransforms")]
     pub fn with_word_transforms(&self, transforms: u8) -> WasmSettings {
         let settings = self
@@ -135,7 +144,19 @@ impl WasmXkpasswd {
     pub fn gen_pass(&self, js_settings: &WasmSettings) -> PasswdResult {
         let settings: Settings = js_settings.settings.clone();
 
-        let (passwd, entropy) = self.pass_generator.gen_pass(&settings);
+        let result = match settings.padding_strategy {
+            PaddingStrategy::AdaptiveFit(len) => {
+                self.pass_generator.gen_pass_fit(&settings, len)
+                    .unwrap_or_else(|_err| {
+                        console_log!("AdaptiveFit error: {}", _err);
+                        // Fallback to regular generation with truncation
+                        self.pass_generator.gen_pass(&settings)
+                    })
+            }
+            _ => self.pass_generator.gen_pass(&settings)
+        };
+
+        let (passwd, entropy) = result;
         console_log!("{:?} {:?}", settings, entropy);
 
         PasswdResult { passwd, entropy }

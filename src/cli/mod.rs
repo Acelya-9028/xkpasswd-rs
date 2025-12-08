@@ -14,6 +14,7 @@ use clap::{ArgAction, CommandFactory, Parser, ValueEnum};
 pub enum CliPadding {
     Fixed,
     Adaptive,
+    AdaptiveFit,
 }
 
 #[derive(Parser, Debug)]
@@ -193,6 +194,16 @@ impl Cli {
                         );
                     }
                 }
+                CliPadding::AdaptiveFit => {
+                    if let Some(adaptive_length) = &self.adaptive_length {
+                        settings = settings
+                            .with_padding_strategy(PaddingStrategy::AdaptiveFit(*adaptive_length))?
+                    } else {
+                        return Err(
+                            "adaptive length is required for adaptive-fit padding strategy".to_string()
+                        );
+                    }
+                }
             }
         }
 
@@ -218,7 +229,7 @@ impl Cli {
 
 impl ValueEnum for CliPadding {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Fixed, Self::Adaptive]
+        &[Self::Fixed, Self::Adaptive, Self::AdaptiveFit]
     }
 
     fn to_possible_value(&self) -> Option<PossibleValue> {
@@ -228,6 +239,11 @@ impl ValueEnum for CliPadding {
             Self::Adaptive => PossibleValue::new("adaptive").help(
                 r#"Pad or trim the final output to fit a length. Requires --adaptive-length.
 Notes: setting this will disable --symbols-before and --symbols-after options"#,
+            ),
+            Self::AdaptiveFit => PossibleValue::new("adaptive-fit").help(
+                r#"Fit words naturally to target length without truncation. Requires --adaptive-length.
+Notes: Finds word combinations that fit within the target length. May reduce entropy compared to 'adaptive'.
+This will disable --symbols-before and --symbols-after options"#,
             ),
         })
     }

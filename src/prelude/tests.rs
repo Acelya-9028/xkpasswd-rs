@@ -42,6 +42,30 @@ impl Randomizer for MockSettings {
     fn calc_entropy(&self, _: usize) -> Entropy {
         Entropy::default()
     }
+
+    fn get_padding_overhead(&self) -> usize {
+        self.padding_digits.0 + self.padding_digits.1 + self.padding_symbols.0 + self.padding_symbols.1 + 2
+    }
+
+    fn get_words_count(&self) -> u8 {
+        3
+    }
+
+    fn get_padding_symbols(&self) -> &str {
+        "~@$%^&*-_+=:|?/.;"
+    }
+
+    fn get_padding_digits(&self) -> (u8, u8) {
+        (self.padding_digits.0 as u8, self.padding_digits.1 as u8)
+    }
+
+    fn get_padding_symbol_lengths(&self) -> (u8, u8) {
+        (self.padding_symbols.0 as u8, self.padding_symbols.1 as u8)
+    }
+
+    fn get_word_transforms(&self) -> u8 {
+        0b00000001 // Lowercase
+    }
 }
 
 #[test]

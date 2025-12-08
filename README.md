@@ -106,9 +106,13 @@ Options:
           - adaptive:
             Pad or trim the final output to fit a length. Requires --adaptive-length.
             Notes: setting this will disable --symbols-before and --symbols-after options
+          - adaptive-fit:
+            Fit words naturally to target length without truncation. Requires --adaptive-length.
+            Dynamically adjusts word count to fit within target length without cutting words.
+            Notes: May reduce entropy compared to 'adaptive'. Ignores --words setting.
 
   -a, --adaptive-length <ADAPTIVE_LENGTH>
-          Pad or trim the final output to fit a length. Required for --padding=adaptive
+          Pad or trim the final output to fit a length. Required for --padding=adaptive or --padding=adaptive-fit
 
   -P, --preset <PRESET>
           Possible values:

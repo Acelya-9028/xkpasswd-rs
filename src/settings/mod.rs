@@ -25,7 +25,7 @@ pub struct Settings {
     padding_digits: (u8, u8),
     padding_symbols: String,
     padding_symbol_lengths: (u8, u8),
-    padding_strategy: PaddingStrategy,
+    pub padding_strategy: PaddingStrategy,
 }
 
 impl Default for Settings {
@@ -110,6 +110,9 @@ impl fmt::Display for Settings {
             PaddingStrategy::Fixed => "no extra padding".to_string(),
             PaddingStrategy::Adaptive(len) => {
                 format!("pad/trim symbols {} to fit {} chars", padding_symbols, len)
+            }
+            PaddingStrategy::AdaptiveFit(len) => {
+                format!("fit words naturally to {} chars (no truncation)", len)
             }
         };
 
@@ -207,10 +210,10 @@ impl Builder for Settings {
         let mut cloned = self.clone();
 
         match strategy {
-            PaddingStrategy::Adaptive(0) => {
+            PaddingStrategy::Adaptive(0) | PaddingStrategy::AdaptiveFit(0) => {
                 return Err("invalid adaptive padding number".to_string())
             }
-            PaddingStrategy::Adaptive(_) => {
+            PaddingStrategy::Adaptive(_) | PaddingStrategy::AdaptiveFit(_) => {
                 cloned.padding_strategy = strategy;
                 cloned.padding_symbol_lengths = (0, 0);
             }
@@ -381,7 +384,7 @@ impl Randomizer for Settings {
     fn adjust_padding(&self, pass_length: usize) -> PaddingResult {
         match self.padding_strategy {
             PaddingStrategy::Fixed => PaddingResult::Unchanged,
-            PaddingStrategy::Adaptive(len) => match len.cmp(&pass_length) {
+            PaddingStrategy::Adaptive(len) | PaddingStrategy::AdaptiveFit(len) => match len.cmp(&pass_length) {
                 cmp::Ordering::Equal => PaddingResult::Unchanged,
                 cmp::Ordering::Less => {
                     log::debug!(
@@ -405,9 +408,41 @@ impl Randomizer for Settings {
         }
     }
 
+    fn get_padding_overhead(&self) -> usize {
+        let (prefix_digits, suffix_digits) = self.padding_digits;
+        let (prefix_symbols, suffix_symbols) = self.padding_symbol_lengths;
+        
+        // Calculate fixed overhead: digits + symbols + separators
+        let digits_len = prefix_digits as usize + suffix_digits as usize;
+        let symbols_len = prefix_symbols as usize + suffix_symbols as usize;
+        let separators_len = (self.words_count as usize).saturating_sub(1);
+        
+        digits_len + symbols_len + separators_len
+    }
+
+    fn get_words_count(&self) -> u8 {
+        self.words_count
+    }
+
+    fn get_padding_symbols(&self) -> &str {
+        &self.padding_symbols
+    }
+
+    fn get_padding_digits(&self) -> (u8, u8) {
+        self.padding_digits
+    }
+
+    fn get_padding_symbol_lengths(&self) -> (u8, u8) {
+        self.padding_symbol_lengths
+    }
+
+    fn get_word_transforms(&self) -> u8 {
+        self.word_transforms
+    }
+
     fn calc_entropy(&self, pool_size: usize) -> Entropy {
         let (min_total_len, max_total_len) = match self.padding_strategy {
-            PaddingStrategy::Adaptive(len) => (len, len),
+            PaddingStrategy::Adaptive(len) | PaddingStrategy::AdaptiveFit(len) => (len, len),
             PaddingStrategy::Fixed => {
                 let prefix_digits = if self.padding_digits.0 > 0 {
                     self.padding_digits.0 + 1

@@ -11,6 +11,7 @@ use wasm_bindgen::prelude::*;
 pub enum PaddingStrategy {
     Fixed,
     Adaptive(usize),
+    AdaptiveFit(usize),
 }
 
 #[derive(Debug)]
@@ -191,6 +192,12 @@ pub trait Randomizer {
     fn rand_suffix(&self) -> (String, String);
     fn adjust_padding(&self, pass_length: usize) -> PaddingResult;
     fn calc_entropy(&self, pool_size: usize) -> Entropy;
+    fn get_padding_overhead(&self) -> usize;
+    fn get_words_count(&self) -> u8;
+    fn get_padding_symbols(&self) -> &str;
+    fn get_padding_digits(&self) -> (u8, u8);
+    fn get_padding_symbol_lengths(&self) -> (u8, u8);
+    fn get_word_transforms(&self) -> u8;
 }
 
 #[derive(Debug)]
@@ -279,6 +286,233 @@ impl Xkpasswd {
         let entropy = settings.calc_entropy(all_words.len());
 
         (passwd, entropy)
+    }
+
+    pub fn gen_pass_fit<S: Randomizer>(&self, settings: &S, target_length: usize) -> Result<(String, Entropy), String> {
+        // Calculate fixed overhead (digits + symbols, but NOT separators yet since word count is dynamic)
+        let (prefix_digits, suffix_digits) = settings.get_padding_digits();
+        let (prefix_symbols, suffix_symbols) = settings.get_padding_symbol_lengths();
+        
+        let digits_len = prefix_digits as usize + suffix_digits as usize;
+        let symbols_len = prefix_symbols as usize + suffix_symbols as usize;
+        let fixed_overhead = digits_len + symbols_len;
+        
+        if fixed_overhead >= target_length {
+            return Err(format!(
+                "Cannot generate password: padding overhead ({} chars) exceeds target length ({} chars)",
+                fixed_overhead, target_length
+            ));
+        }
+
+        let available_for_words_and_seps = target_length - fixed_overhead;
+        let min_word_length = 4;
+        
+        // Minimum space needed: at least 1 word of min length
+        if available_for_words_and_seps < min_word_length {
+            return Err(format!(
+                "Cannot generate password: need at least {} chars for 1 word, but only {} chars available after padding",
+                min_word_length, available_for_words_and_seps
+            ));
+        }
+
+        // Try to distribute space evenly across words, but respect word length constraints
+        let word_lengths_range = settings.word_lengths();
+        let min_len = word_lengths_range.start;
+        let max_len = word_lengths_range.end - 1; // Range is exclusive at end
+        
+        // Build a pool of words that could fit
+        let mut word_pool: Vec<&str> = vec![];
+        for len in min_len..=max_len {
+            if let Some(words) = self.dict.get(&len) {
+                word_pool.extend(words);
+            }
+        }
+
+        if word_pool.is_empty() {
+            return Err("No words available in the specified length range".to_string());
+        }
+
+        // Try different word counts, starting from a reasonable estimate
+        let avg_word_len = (min_len + max_len) / 2;
+        let estimated_words = (available_for_words_and_seps / (avg_word_len as usize + 1)).max(1);
+        
+        let mut attempts = 0;
+        let max_attempts = 500;
+        
+        // Try word counts from 1 to estimated * 2 (max 20)
+        let max_word_count = (estimated_words * 2).min(20);
+        
+        loop {
+            attempts += 1;
+            if attempts > max_attempts {
+                return Err(format!(
+                    "Could not find word combination fitting in {} chars after {} attempts",
+                    target_length, max_attempts
+                ));
+            }
+
+            // Cycle through different word counts
+            let words_count = 1 + (attempts % max_word_count);
+            
+            // Calculate total items that will be joined (words + digits if present)
+            let has_prefix_digits = prefix_digits > 0;
+            let has_suffix_digits = suffix_digits > 0;
+            let total_items = words_count + (if has_prefix_digits { 1 } else { 0 }) + (if has_suffix_digits { 1 } else { 0 });
+            let separator_space = total_items.saturating_sub(1);
+            let space_for_words = available_for_words_and_seps.saturating_sub(separator_space);
+            
+            if space_for_words < min_word_length {
+                continue;
+            }
+
+            // Generate random words
+            let candidate_words = self.rand_words_count(&word_pool, words_count, settings);
+            let total_word_length: usize = candidate_words.iter().map(|w| w.len()).sum();
+            
+            // We need EXACT match: total_word_length + separators = space_for_words
+            if total_word_length == space_for_words {
+                // Found an EXACT fitting combination!
+                let separator = settings.rand_separator();
+                let mut words: Vec<String> = vec![];
+
+                let (prefix_symbols, prefix_digits) = settings.rand_prefix();
+                if !prefix_digits.is_empty() {
+                    words.push(prefix_digits);
+                }
+
+                words.extend(candidate_words.clone());
+
+                let (suffix_digits, suffix_symbols) = settings.rand_suffix();
+                if !suffix_digits.is_empty() {
+                    words.push(suffix_digits);
+                }
+
+                let passwd = format!(
+                    "{}{}{}",
+                    prefix_symbols,
+                    words.join(&separator),
+                    suffix_symbols
+                );
+
+                let entropy = settings.calc_entropy(word_pool.len());
+                
+                log::debug!(
+                    "AdaptiveFit: generated password with {} words, {} chars (target: {}) in {} attempts",
+                    candidate_words.len(),
+                    passwd.len(),
+                    target_length,
+                    attempts
+                );
+
+                return Ok((passwd, entropy));
+            }
+        }
+    }
+
+    fn rand_words_count<S: Randomizer>(&self, pool: &[&str], count: usize, settings: &S) -> Vec<String> {
+        use rand::distributions::{Distribution, Uniform};
+        use std::collections::HashMap;
+        
+        if pool.is_empty() {
+            return vec![];
+        }
+
+        let mut rng = rand::thread_rng();
+        let word_indices = Uniform::from(0..pool.len());
+
+        // Get transform list for this word count
+        let transforms_list = self.build_transforms_list_for_count(count as u8, settings);
+
+        // not enough words to distinguishably randomize
+        if pool.len() < count {
+            return (0..count)
+                .map(|i| {
+                    let index: usize = word_indices.sample(&mut rng);
+                    let word = pool[index];
+                    let transform = transforms_list.get(i).copied().unwrap_or(crate::bit_flags::WordTransform::Lowercase);
+                    self.transform_word(word, transform)
+                })
+                .collect();
+        }
+
+        // enough words, ensure no duplicates
+        let mut index_marker: HashMap<usize, bool> = HashMap::new();
+        (0..count)
+            .map(|i| loop {
+                let index: usize = word_indices.sample(&mut rng);
+                let word = pool[index];
+
+                if index_marker.get(&index).is_none() {
+                    index_marker.insert(index, true);
+                    let transform = transforms_list.get(i).copied().unwrap_or(crate::bit_flags::WordTransform::Lowercase);
+                    break self.transform_word(word, transform);
+                }
+            })
+            .collect()
+    }
+
+    fn build_transforms_list_for_count<S: Randomizer>(&self, count: u8, settings: &S) -> Vec<crate::bit_flags::WordTransform> {
+        use rand::distributions::{Distribution, Uniform};
+        use crate::bit_flags::{BitFlags, WordTransform};
+        
+        let word_transforms = settings.get_word_transforms();
+        
+        if word_transforms.has_flag(WordTransform::AltercaseLowerFirst) {
+            return (0..count)
+                .map(|idx| {
+                    if idx % 2 == 0 {
+                        WordTransform::Lowercase
+                    } else {
+                        WordTransform::Uppercase
+                    }
+                })
+                .collect();
+        }
+
+        if word_transforms.has_flag(WordTransform::AltercaseUpperFirst) {
+            return (0..count)
+                .map(|idx| {
+                    if idx % 2 == 0 {
+                        WordTransform::Uppercase
+                    } else {
+                        WordTransform::Lowercase
+                    }
+                })
+                .collect();
+        }
+
+        const ALL_SINGLE_WORD_TRANSFORMS: [WordTransform; 4] = [
+            WordTransform::Lowercase,
+            WordTransform::Titlecase,
+            WordTransform::Uppercase,
+            WordTransform::InversedTitlecase,
+        ];
+
+        let whitelisted_transforms: Vec<&WordTransform> = ALL_SINGLE_WORD_TRANSFORMS
+            .iter()
+            .filter(|&&transform| word_transforms & transform)
+            .collect();
+
+        let mut rng = rand::thread_rng();
+        let transform_indices = Uniform::from(0..whitelisted_transforms.len());
+
+        (0..count)
+            .map(|_| {
+                let index: usize = transform_indices.sample(&mut rng);
+                *whitelisted_transforms[index]
+            })
+            .collect()
+    }
+
+    fn transform_word(&self, word: &str, transform: crate::bit_flags::WordTransform) -> String {
+        use crate::bit_flags::WordTransform;
+        
+        match transform {
+            WordTransform::Titlecase => word[..1].to_uppercase() + &word[1..],
+            WordTransform::Uppercase => word.to_uppercase(),
+            WordTransform::InversedTitlecase => word[..1].to_lowercase() + &word[1..].to_uppercase(),
+            _ => word.to_lowercase(),
+        }
     }
 }
 
